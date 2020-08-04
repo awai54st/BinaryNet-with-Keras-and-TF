@@ -43,7 +43,6 @@ def log2(x):
 
 def LOG_quantize(
         value, width):
-
     sign = K.sign(value)
     value = log2(K.abs(value))
     # quantize
@@ -79,29 +78,120 @@ def tf_custom_gradient_method(f):
         return self._tf_custom_gradient_wrappers[f](*args, **kwargs)
     return wrapped
 
-
-class Quantise_grad_layer(Layer):
-    def __init__(self,width,point):
-        super(Quantise_grad_layer, self).__init__()
+class l1_batch_norm_mod_conv(Layer):
+    def __init__(self,batch_size,width_in,ch_in,width,mu_point,var_point, **kwargs):
+        super(l1_batch_norm_mod_conv, self).__init__(**kwargs)
+        self.batch_size = batch_size
+        self.width_in = width_in
+        self.ch_in = ch_in
         self.width = width
-        self.point = point
+        self.mu_point = mu_point
+        self.var_point = var_point
 
     def build(self, input_shape):
-        super(Quantise_grad_layer, self).build(input_shape)  # Be sure to call this at the end
-        beta = np.zeros([5])*1.0
+        super(l1_batch_norm_mod_conv, self).build(input_shape)  # Be sure to call this at the end
+        beta = np.zeros([self.ch_in])*1.0
         self.beta=K.variable(beta)
+        self.trainable_weights=[self.beta]
+
 
     def call(self, x):
-        return self.quantise_gradient_op(x)
+        return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,1,1,-1])
+
 
     @tf_custom_gradient_method
     def quantise_gradient_op(self, x):
-        result = x # do forward computation
+        N = self.batch_size*self.width_in*self.width_in
+
+        mu = 1./N * K.sum(x, axis = [0,1,2])
+        mu = K.reshape(mu,[1,1,1,-1])
+        xmu = x - mu
+        var = 1./N * K.sum(K.abs(xmu), axis = [0,1,2])
+        var = K.reshape(var,[1,1,1,-1])
+
+        # quantise var
+        #var = LOG_quantize(var, 8.0)
+
+        ivar = 1./var
+
+        result = xmu * ivar
+
         def custom_grad(dy):
-            grad, self.point, self.width = FXP_quantize(dy, self.point, self.width)
-            return grad
+            N = self.batch_size*self.width_in*self.width_in
+
+            dy_norm_x = dy * ivar
+            term_1 = dy_norm_x - K.reshape(1.0/N * K.sum(dy_norm_x, axis=[0,1,2]), [1,1,1,-1])
+            term_2 = K.sign(result)
+            #term_3 = 1.0/N * K.sum(dy_norm_x * result, axis=[0,1,2])
+            term_3 = 1.0/N * K.sum(dy_norm_x * K.sign(result) * K.reshape(1.0/N * K.sum(K.abs(result), axis=[0,1,2]), [1,1,1,-1]), axis=[0,1,2])
+            term_3 = K.reshape(term_3, [1,1,1,-1])
+            dx = term_1 - term_2 * term_3
+
+            return dx
+
         return result, custom_grad
 
+    def get_output_shape_for(self,input_shape):
+        return input_shape
+    def compute_output_shape(self,input_shape):
+        return input_shape
+
+class l1_batch_norm_mod_dense(Layer):
+    def __init__(self,batch_size,ch_in,width,mu_point,var_point, **kwargs):
+        super(l1_batch_norm_mod_dense, self).__init__(**kwargs)
+        self.batch_size = batch_size
+        self.ch_in = ch_in
+        self.width = width
+        self.mu_point = mu_point
+        self.var_point = var_point
+
+    def build(self, input_shape):
+        super(l1_batch_norm_mod_dense, self).build(input_shape)  # Be sure to call this at the end
+        beta = np.zeros([self.ch_in])*1.0
+        self.beta=K.variable(beta)
+        self.trainable_weights=[self.beta]
+
+    def call(self, x):
+        return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,-1])
+
+
+
+    @tf_custom_gradient_method
+    def quantise_gradient_op(self, x):
+        N = self.batch_size
+
+        mu = 1./N * K.sum(x, axis = 0)
+        mu = K.reshape(mu,[1,-1])
+        xmu = x - mu
+        var = 1./N * K.sum(K.abs(xmu), axis = 0)
+        var = K.reshape(var,[1,-1])
+
+        # quantise var
+        #var = LOG_quantize(var, 8.0)
+
+        ivar = 1./var
+
+        result = xmu * ivar
+
+        def custom_grad(dy):
+            N = self.batch_size
+
+            dy_norm_x = dy * ivar
+            term_1 = dy_norm_x - K.reshape(1.0/N * K.sum(dy_norm_x, axis=0), [1,-1])
+            term_2 = K.sign(result)
+            #term_3 = 1.0/N * K.sum(dy_norm_x * result, axis=0)
+            term_3 = 1.0/N * K.sum(dy_norm_x * K.sign(result) * K.reshape(1.0/N * K.sum(K.abs(result), axis=0), [1,-1]), axis=0)
+            term_3 = K.reshape(term_3, [1,-1])
+            dx = term_1 - term_2 * term_3
+
+            return dx
+
+        return result, custom_grad
+
+    def get_output_shape_for(self,input_shape):
+        return input_shape
+    def compute_output_shape(self,input_shape):
+        return input_shape
 
 class Residual_sign(Layer):
     def __init__(self, gamma=1,**kwargs):
@@ -127,6 +217,8 @@ def switch(condition, t, e):
         import theano.tensor as tt
         return tt.switch(condition, t, e)
 
+#stochastic_matmul_grad_gpu_so = '/home/ew913/BNN-FXP-TRAINING-XNOR-COPY/training-software/MNIST-CIFAR-SVHN/stochastic_matmul_grad_gpu.so'
+#stochastic_matmul_grad_gpu_module = tf.load_op_library(stochastic_matmul_grad_gpu_so)
 
 class binary_conv(Layer):
 	def __init__(self,nfilters,ch_in,k,padding,gamma,width,point,strides=(1,1),first_layer=False,**kwargs):
@@ -150,7 +242,10 @@ class binary_conv(Layer):
 
 
 	def call(self, x,mask=None):
-		self.out=K.conv2d(x, kernel=binarize_weight(self.w), padding=self.padding,strides=self.strides )
+		# Quantise gradients to float16
+		self.out = self.xnor_wg_conv_op(x,binarize_weight(self.fp16_grad(self.w)))
+
+		#self.out=K.conv2d(x, kernel=binarize_weight(self.w), padding=self.padding,strides=self.strides )
 		#self.out = self.xnor_wg_conv_op(x,binarize_weight(self.w))
 		self.output_dim=self.out.get_shape()
 		return self.out
@@ -167,9 +262,12 @@ class binary_conv(Layer):
 			dy_pad_number = tf.constant([[0, 0,], [2, 2,],[2, 2,], [0, 0]])
 			dy_padded = tf.pad(dy, dy_pad_number)
 			# if po2 dx
-			#dy_padded = dy_padded * (2**(16))
-			dy_padded = LOG_quantize(dy_padded, 8.0)
-			#dy_padded = dy_padded * (2**(-16))
+			dy_padded_max = K.max(K.abs(dy_padded))
+			dy_padded_bias = -K.round(log2(dy_padded_max)) + 8 # 8 = 2^4/2
+			dy_padded = dy_padded * (2**(dy_padded_bias))
+			dy_padded = LOG_quantize(dy_padded, 4.0)
+			dy_padded = dy_padded * (2**(-dy_padded_bias))
+
 			dx = K.conv2d(dy_padded, kernel=w_reversed, padding="valid",strides=self.strides )
 
 			if self.padding == "same":
@@ -183,9 +281,11 @@ class binary_conv(Layer):
 			dy_trans = tf.transpose(dy, [1,2,0,3])
 
 			# Shift
-			#dy_trans = dy_trans * (2**(16))
-			dy_trans = LOG_quantize(dy_trans, 8.0)
-			#dy_trans = dy_trans * (2**(-16))
+			dy_trans_max = K.max(K.abs(dy_trans))
+			dy_trans_bias = -K.round(log2(dy_trans_max)) + 8
+			dy_trans = dy_trans * (2**(dy_trans_bias))
+			dy_trans = LOG_quantize(dy_trans, 4.0)
+			dy_trans = dy_trans * (2**(-dy_trans_bias))
 
 			# Ternary dy
 			ones = K.ones_like(dy_trans)
@@ -214,11 +314,84 @@ class binary_conv(Layer):
 	
 		return result, custom_grad
 
+	@tf_custom_gradient_method
+	def fp16_grad(self, w):
+		result= w
+		def custom_grad(dy):
+			dy_fp16 = tf.cast(dy, tf.float16)
+			dy_fp32 = tf.cast(dy_fp16, tf.float32)
+			return dy_fp32
+	
+		return result, custom_grad
+
 
 	def  get_output_shape_for(self,input_shape):
 		return (input_shape[0], self.output_dim[1],self.output_dim[2],self.output_dim[3])
 	def compute_output_shape(self,input_shape):
 		return (input_shape[0], self.output_dim[1],self.output_dim[2],self.output_dim[3])
+
+#def stochastic_po2_element_wise_add(x, y):
+#
+#	# swap x and y elementwise, such that x is "bigger_operand" and y is "smaller_operand"
+#	
+#	bigger_operand = tf.where(K.abs(x) >= K.abs(y), x, y)
+#	smaller_operand = tf.where(K.abs(x) >= K.abs(y), y, x)
+#	
+#	# flip a coin between z = -zmin and z = +zmin
+#	z = K.sign(tf.random_uniform(shape=tf.shape(x), minval=-1., maxval=1.)) * (2**(-64))
+#	
+#	rng_uniform = tf.random_uniform(shape=tf.shape(x), minval=0., maxval=1.)
+#	
+#	# case 1: x > 0, y > 0, return z = 2*x with probability y/x and z = x with probability 1-y/x.
+#	
+#	case_1_cond = tf.logical_and(tf.logical_and(bigger_operand > 0, smaller_operand > 0), tf.abs(bigger_operand) != tf.abs(smaller_operand))
+#	z = tf.where(case_1_cond, bigger_operand + bigger_operand * (tf.where((smaller_operand/bigger_operand) > rng_uniform, tf.ones_like(x), tf.zeros_like(x))), z)
+#	
+#	# case 2: x > 0, y < 0, return z = x/2 with probability -2y/x and z = x with probability 1+2y/x
+#	
+#	case_2_cond = tf.logical_and(tf.logical_and(bigger_operand > 0, smaller_operand < 0), tf.abs(bigger_operand) != tf.abs(smaller_operand))
+#	z = tf.where(case_2_cond, bigger_operand - (bigger_operand/2) * (tf.where((-2.0*smaller_operand/bigger_operand) > rng_uniform, tf.ones_like(x), tf.zeros_like(x))), z)
+#	
+#	# case 3: x < 0, y < 0, same with case 1 and flip z sign
+#	
+#	case_3_cond = tf.logical_and(tf.logical_and(bigger_operand < 0, smaller_operand < 0), tf.abs(bigger_operand) != tf.abs(smaller_operand))
+#	z = tf.where(case_3_cond, bigger_operand + bigger_operand * (tf.where((smaller_operand/bigger_operand) > rng_uniform, tf.ones_like(x), tf.zeros_like(x))), z)
+#	
+#	# case 4: x < 0, y > 0, return z = x/2 with probability -2y/x and z = x with probability 1+2y/x
+#	
+#	case_4_cond = tf.logical_and(tf.logical_and(bigger_operand < 0, smaller_operand > 0), tf.abs(bigger_operand) != tf.abs(smaller_operand))
+#	z = tf.where(case_4_cond, bigger_operand - (bigger_operand/2) * (tf.where((-2.0*smaller_operand/bigger_operand) > rng_uniform, tf.ones_like(x), tf.zeros_like(x))), z)
+#	
+#	# case 5: x = y, then z = 2x
+#	
+#	case_5_cond = bigger_operand == smaller_operand
+#	z = tf.where(case_5_cond, 2 * bigger_operand, z)
+#	
+#	# case 6: x = -y, as then you want z = 0 which is unrepresentable. So perhaps flip a coin between z = -zmin and z = +zmin
+#
+#
+#	return z
+#
+#def stochastic_po2_dot(a, b, unstack_num):
+#
+#	a_shape = tf.shape(a)
+#	a_transposed = tf.reshape(a, [a_shape[0], a_shape[1], 1])
+#	a_transposed = tf.transpose(a_transposed, [0, 2, 1])
+#
+#	b_shape = tf.shape(b)
+#	b_transposed = tf.reshape(b, [b_shape[0], b_shape[1], 1])
+#	b_transposed = tf.transpose(b_transposed, [2, 1, 0])
+#
+#	tmp = tf.multiply(a_transposed, b_transposed)
+#
+#	tmp_unpacked = tf.unstack(tmp, axis=2, num=unstack_num) # defaults to axis 0, returns a list of tensors
+#
+#	c = K.sign(tf.random_uniform(shape=tf.shape(tmp_unpacked[0]), minval=-1., maxval=1.)) * (2**(-128))
+#
+#	for tmp_slice in tmp_unpacked:
+#		c = stochastic_po2_element_wise_add(c,tmp_slice)
+#
+#	return c
 
 class binary_dense(Layer):
 	def __init__(self,n_in,n_out,gamma,width,point,first_layer=False,**kwargs):
@@ -236,8 +409,11 @@ class binary_dense(Layer):
 		self.trainable_weights=[self.w]
 
 	def call(self, x,mask=None):
+		# Cast weights to float16
+		self.out = self.xnor_wg_dense_op(x,binarize_weight(self.fp16_grad(self.w)))
+
 		#self.out = self.xnor_wg_dense_op(x,binarize_weight(self.w))
-		self.out = K.dot(x,binarize_weight(self.w))
+		#self.out = K.dot(x,binarize_weight(self.w))
 		return self.out
 
 	@tf_custom_gradient_method
@@ -246,9 +422,11 @@ class binary_dense(Layer):
 		def custom_grad(dy):
 
 			# Shift
-			#dy = dy * (2**(16))
-			dy = LOG_quantize(dy, 8.0)
-			#dy = dy * (2**(-16))
+			dy_max = K.max(K.abs(dy))
+			dy_bias = -K.round(log2(dy_max)) + 8
+			dy = dy * (2**(dy_bias))
+			dy = LOG_quantize(dy, 4.0)
+			dy = dy * (2**(-dy_bias))
 
 			dx = K.dot(dy, K.transpose(w))
 
@@ -264,6 +442,16 @@ class binary_dense(Layer):
 			dw = 1./np.sqrt(N) * K.sign(dw + 1e-16) # Adding bias 1e-8 to sign function
 
 			return (dx, dw)
+	
+		return result, custom_grad
+
+	@tf_custom_gradient_method
+	def fp16_grad(self, w):
+		result= w
+		def custom_grad(dy):
+			dy_fp16 = tf.cast(dy, tf.float16)
+			dy_fp32 = tf.cast(dy_fp16, tf.float32)
+			return dy_fp32
 	
 		return result, custom_grad
 

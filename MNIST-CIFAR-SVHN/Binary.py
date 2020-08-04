@@ -11,7 +11,7 @@ from keras import backend as K
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 import sys
 sys.path.insert(0, '..')
 from binarization_utils import *
@@ -266,51 +266,3 @@ if Inspect_fromscratch:
 
 
 
-"""if hardware_debug:
-	inp=X_train[0:1]
-	sess=K.get_session()
-	resid_levels=3
-	model=Sequential()
-	model.add(binary_dense(n_in=784,n_out=256,change='clip',input_shape=[784]))
-	#model.add(BatchNormalization(axis=-1, momentum=batch_norm_alpha, epsilon=batch_norm_eps))
-	model.add(Residual_sign(levels=resid_levels))
-
-	for i,l in enumerate(model.layers):
-		if isinstance(l,binary_dense) or isinstance(l,binary_conv):
-			l.hard_binarize()
-
-	w,gamma_w=model.layers[0].get_weights()
-	gamma_act=np.absolute(sess.run(model.layers[-1].means))
-	gamma=gamma_act*gamma_w
-	w=(w>0).astype(np.int32)
-	w=w.transpose()
-
-	b=np.zeros(256)
-	alpha=np.ones(256)
-	print w.shape,b.shape,gamma
-	out=model.predict(inp)
-
-
-	inp=np.squeeze(inp)
-	inp=inp*2**(8)
-	inp=inp.astype(np.uint64)
-	out=np.squeeze(out)
-	out=np.maximum(out,0)
-	print out
-	out=out*2**16
-	out=out.astype(np.uint64)
-
-	import struct
-	outFile=open('params/input.bin','wb')
-	for i in range(inp.shape[0]):
-		outFile.write(struct.pack('Q', inp[i]))
-	outFile.close()
-
-	outFile=open('params/output.bin','wb')
-	for i in range(out.shape[0]):
-		outFile.write(struct.pack('Q', out[i]))
-	outFile.close()
-
-	print out
-
-	store_layer_weights(w,b,peCount=16,simdCount=64,alpha=alpha,targetDirBin='params',layer_num=0,gamma=gamma,target_config_file=None)"""
