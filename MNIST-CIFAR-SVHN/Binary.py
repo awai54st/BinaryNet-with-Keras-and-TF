@@ -11,13 +11,13 @@ from keras import backend as K
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 import sys
 sys.path.insert(0, '..')
 from binarization_utils import *
 from model_architectures import get_model
 
-dataset='binarynet'
+dataset='MNIST'
 Train=True
 Evaluate=True
 Inspect=False
@@ -90,7 +90,7 @@ if Train:
 	for resid_levels in range(1):
 		print 'training with', resid_levels,'levels'
 		sess=K.get_session()
-		model=get_model(dataset,resid_levels)
+		model=get_model(dataset,resid_levels,batch_size)
 		#model.summary()
 
 		#gather all binary dense and binary convolution layers:
@@ -154,7 +154,7 @@ if Train:
 if Evaluate:
 	for resid_levels in range(1):
 		weights_path='models/'+dataset+'/'+str(resid_levels)+'_residuals.h5'
-		model=get_model(dataset,resid_levels)
+		model=get_model(dataset,resid_levels,batch_size)
 		model.load_weights(weights_path)
 		#lr=0.0001
 		#opt = keras.optimizers.Adam(lr=lr,decay=1e-6)#SGD(lr=lr,momentum=0.9,decay=1e-5)
@@ -174,7 +174,7 @@ if Inspect:
 
 	for resid_levels in range(1):
 		weights_path='models/'+dataset+'/'+str(resid_levels)+'_residuals.h5'
-		model=get_model(dataset,resid_levels)
+		model=get_model(dataset,resid_levels,batch_size)
 		model.load_weights(weights_path)
 
 		lr=1.0
@@ -241,7 +241,7 @@ if Inspect_fromscratch:
 	y_test = y_test[0:200]
 
 	for resid_levels in range(1):
-		model=get_model(dataset,resid_levels)
+		model=get_model(dataset,resid_levels,batch_size)
 		opt = keras.optimizers.Adam()
 		model.compile(loss='sparse_categorical_crossentropy',optimizer=opt,metrics=['accuracy'])
 		#model.fit(X_train, y_train,batch_size=batch_size, verbose=2,epochs=epochs)
