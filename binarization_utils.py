@@ -96,54 +96,58 @@ class l1_batch_norm_mod_conv(Layer):
         self.trainable_weights=[self.beta]
         self.moving_mean = self.add_weight(
             name='moving_mean',
-            shape=[self.ch_in],
+            shape=[1,1,1,self.ch_in],
             initializer=tf.zeros_initializer(),
             trainable=False)
         self.moving_var = self.add_weight(
             name='moving_var',
-            shape=[self.ch_in],
+            shape=[1,1,1,self.ch_in],
             initializer=tf.initializers.ones(),
             trainable=False)
 
     def call(self, x):
+        # Check if training or inference
+        training = K.learning_phase()
+
+        N = self.batch_size*self.width_in*self.width_in
+        self.mu = 1./N * K.sum(x, axis = [0,1,2])
+        self.mu = K.reshape(self.mu,[1,1,1,-1])
+        xmu = x - self.mu
+        self.var = 1./N * K.sum(K.abs(xmu), axis = [0,1,2])
+        self.var = K.reshape(self.var,[1,1,1,-1])
+
+        mean_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_mean,
+            self.mu, self.momentum),
+            lambda:self.moving_mean)
+        var_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_var,
+            self.var, self.momentum),
+            lambda:self.moving_var)
+        self.add_update([mean_update, var_update])
+
         return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,1,1,-1])
 
 
     @tf_custom_gradient_method
     def quantise_gradient_op(self, x):
-        N = self.batch_size*self.width_in*self.width_in
-
-        mu = 1./N * K.sum(x, axis = [0,1,2])
-        mu = K.reshape(mu,[1,1,1,-1])
-
-        # moving mean
-        self.moving_mean = self.moving_mean * self.momentum + mu * (1.0 - self.momentum)
 
         # Check if training or inference
         training = K.learning_phase()
 
-        mu = tf.cond(training,
-            lambda: mu,
-            lambda: self.moving_mean)
+        if training in {0, False}:
+            self.mu = self.moving_mean
+            self.var = self.moving_var
 
-        xmu = x - mu
-
-        var = 1./N * K.sum(K.abs(xmu), axis = [0,1,2])
-        var = K.reshape(var,[1,1,1,-1])
-
-        # moving var
-        self.moving_var = self.moving_var * self.momentum + var * (1.0 - self.momentum)
-
-        var = tf.cond(training,
-            lambda: var,
-            lambda: self.moving_var)
+        xmu = x - self.mu
 
         # quantise var
         #var = LOG_quantize(var, 8.0)
 
-        ivar = 1./var
+        ivar = 1./self.var
 
         result = xmu * ivar
+
 
         def custom_grad(dy):
             N = self.batch_size*self.width_in*self.width_in
@@ -182,51 +186,55 @@ class l1_batch_norm_mod_dense(Layer):
         self.trainable_weights=[self.beta]
         self.moving_mean = self.add_weight(
             name='moving_mean',
-            shape=[self.ch_in],
+            shape=[1,self.ch_in],
             initializer=tf.zeros_initializer(),
             trainable=False)
         self.moving_var = self.add_weight(
             name='moving_var',
-            shape=[self.ch_in],
+            shape=[1,self.ch_in],
             initializer=tf.initializers.ones(),
             trainable=False)
 
     def call(self, x):
-        return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,-1])
-
-    @tf_custom_gradient_method
-    def quantise_gradient_op(self, x):
-        N = self.batch_size
-
-        mu = 1./N * K.sum(x, axis = 0)
-        mu = K.reshape(mu,[1,-1])
-
-        # moving mean
-        self.moving_mean = self.moving_mean * self.momentum + mu * (1.0 - self.momentum)
 
         # Check if training or inference
         training = K.learning_phase()
 
-        mu = tf.cond(training,
-            lambda: mu,
-            lambda: self.moving_mean)
+        N = self.batch_size
+        self.mu = 1./N * K.sum(x, axis = 0)
+        self.mu = K.reshape(self.mu,[1,-1])
+        xmu = x - self.mu
+        self.var = 1./N * K.sum(K.abs(xmu), axis = 0)
+        self.var = K.reshape(self.var,[1,-1])
 
-        xmu = x - mu
+        mean_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_mean,
+            self.mu, self.momentum),
+            lambda:self.moving_mean)
+        var_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_var,
+            self.var, self.momentum),
+            lambda:self.moving_var)
+        self.add_update([mean_update, var_update])
 
-        var = 1./N * K.sum(K.abs(xmu), axis = 0)
-        var = K.reshape(var,[1,-1])
+        return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,-1])
 
-        # moving var
-        self.moving_var = self.moving_var * self.momentum + var * (1.0 - self.momentum)
+    @tf_custom_gradient_method
+    def quantise_gradient_op(self, x):
 
-        var = tf.cond(training,
-            lambda: var,
-            lambda: self.moving_var)
+        # Check if training or inference
+        training = K.learning_phase()
+
+        if training in {0, False}:
+            self.mu = self.moving_mean
+            self.var = self.moving_var
+
+        xmu = x - self.mu
 
         # quantise var
         #var = LOG_quantize(var, 8.0)
 
-        ivar = 1./var
+        ivar = 1./self.var
 
         result = xmu * ivar
 

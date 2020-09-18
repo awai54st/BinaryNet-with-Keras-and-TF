@@ -11,13 +11,13 @@ from keras import backend as K
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 import sys
 sys.path.insert(0, '..')
 from binarization_utils import *
 from model_architectures import get_model
 
-dataset='MNIST'
+dataset='binarynet'
 Train=True
 Evaluate=True
 Inspect=False

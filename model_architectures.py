@@ -42,7 +42,7 @@ def get_model(dataset,resid_levels,batch_size):
 		model.add(Residual_sign(gamma=1.0))
 		model.add(binary_conv(nfilters=64,ch_in=64,k=3,gamma=1.0,width=8.0,point=12.0,padding='valid'))
 		#model.add(BatchNormalization(axis=-1, momentum=batch_norm_alpha, epsilon=batch_norm_eps))
-		model.add(l1_batch_norm_mod_conv(batch_size=batch_size,width_in=14,ch_in=64,width=16.0,mu_point=8.0,var_point=8.0, momentum=batch_norm_alpha))
+		model.add(l1_batch_norm_mod_conv(batch_size=batch_size,width_in=28,ch_in=64,width=16.0,mu_point=8.0,var_point=8.0, momentum=batch_norm_alpha))
 		model.add(Residual_sign(gamma=1.0))
 		model.add(MaxPooling2D(pool_size=(2, 2),strides=(2,2)))
 
@@ -52,7 +52,7 @@ def get_model(dataset,resid_levels,batch_size):
 		model.add(Residual_sign(gamma=1.0))
 		model.add(binary_conv(nfilters=128,ch_in=128,k=3,gamma=1.0,width=8.0,point=10.0,padding='valid'))
 		#model.add(BatchNormalization(axis=-1, momentum=batch_norm_alpha, epsilon=batch_norm_eps))
-		model.add(l1_batch_norm_mod_conv(batch_size=batch_size,width_in=5,ch_in=128,width=16.0,mu_point=8.0,var_point=8.0, momentum=batch_norm_alpha))
+		model.add(l1_batch_norm_mod_conv(batch_size=batch_size,width_in=10,ch_in=128,width=16.0,mu_point=8.0,var_point=8.0, momentum=batch_norm_alpha))
 		model.add(Residual_sign(gamma=1.0))
 		model.add(MaxPooling2D(pool_size=(2, 2),strides=(2,2)))
 
