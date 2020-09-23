@@ -308,9 +308,9 @@ class binary_conv(Layer):
 
 	def call(self, x,mask=None):
 		# Quantise gradients to float16
-		self.out = self.xnor_wg_conv_op(x,binarize_weight(self.fp16_grad(self.w)))
+		#self.out = self.xnor_wg_conv_op(x,binarize_weight(self.fp16_grad(self.w)))
 
-		#self.out=K.conv2d(x, kernel=binarize_weight(self.w), padding=self.padding,strides=self.strides )
+		self.out=K.conv2d(x, kernel=binarize_weight(self.w), padding=self.padding,strides=self.strides )
 		#self.out = self.xnor_wg_conv_op(x,binarize_weight(self.w))
 		self.output_dim=self.out.get_shape()
 		return self.out
@@ -475,10 +475,10 @@ class binary_dense(Layer):
 
 	def call(self, x,mask=None):
 		# Cast weights to float16
-		self.out = self.xnor_wg_dense_op(x,binarize_weight(self.fp16_grad(self.w)))
+		#self.out = self.xnor_wg_dense_op(x,binarize_weight(self.fp16_grad(self.w)))
 
 		#self.out = self.xnor_wg_dense_op(x,binarize_weight(self.w))
-		#self.out = K.dot(x,binarize_weight(self.w))
+		self.out = K.dot(x,binarize_weight(self.w))
 		return self.out
 
 	@tf_custom_gradient_method

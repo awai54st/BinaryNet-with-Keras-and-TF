@@ -17,7 +17,7 @@ sys.path.insert(0, '..')
 from binarization_utils import *
 from model_architectures import get_model
 
-dataset='binarynet'
+dataset='MNIST'
 Train=True
 Evaluate=True
 Inspect=False
