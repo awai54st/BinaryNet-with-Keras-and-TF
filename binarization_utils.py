@@ -406,6 +406,9 @@ class binary_conv(Layer):
 
 	@tf_custom_gradient_method
 	def fp16_grad(self, w):
+		w_fp16 = tf.cast(w, tf.float16)
+		w = tf.cast(w_fp16, tf.float32)
+
 		result= w
 		def custom_grad(dy):
 			dy_fp16 = tf.cast(dy, tf.float16)
@@ -537,6 +540,9 @@ class binary_dense(Layer):
 
 	@tf_custom_gradient_method
 	def fp16_grad(self, w):
+		w_fp16 = tf.cast(w, tf.float16)
+		w = tf.cast(w_fp16, tf.float32)
+
 		result= w
 		def custom_grad(dy):
 			dy_fp16 = tf.cast(dy, tf.float16)
