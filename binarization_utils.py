@@ -116,6 +116,11 @@ class l1_batch_norm_mod_conv(Layer):
         self.var = 1./N * K.sum(K.abs(xmu), axis = [0,1,2])
         self.var = K.reshape(self.var,[1,1,1,-1])
 
+        mu_fp16 = tf.cast(self.mu, tf.float16)
+        self.mu = tf.cast(mu_fp16, tf.float32)
+        var_fp16 = tf.cast(self.var, tf.float16)
+        self.var = tf.cast(var_fp16, tf.float32)
+
         mean_update = tf.cond(training,
             lambda:K.moving_average_update(self.moving_mean,
             self.mu, self.momentum),
@@ -125,6 +130,9 @@ class l1_batch_norm_mod_conv(Layer):
             self.var, self.momentum),
             lambda:self.moving_var)
         self.add_update([mean_update, var_update])
+
+        beta_fp16 = tf.cast(self.beta, tf.float16)
+        self.beta = tf.cast(beta_fp16, tf.float32)
 
         return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,1,1,-1])
 
@@ -150,6 +158,10 @@ class l1_batch_norm_mod_conv(Layer):
 
 
         def custom_grad(dy):
+
+            dy_fp16 = tf.cast(dy, tf.float16)
+            dy = tf.cast(dy_fp16, tf.float32)
+
             N = self.batch_size*self.width_in*self.width_in
 
             dy_norm_x = dy * ivar
@@ -207,6 +219,12 @@ class l1_batch_norm_mod_dense(Layer):
         self.var = 1./N * K.sum(K.abs(xmu), axis = 0)
         self.var = K.reshape(self.var,[1,-1])
 
+        mu_fp16 = tf.cast(self.mu, tf.float16)
+        self.mu = tf.cast(mu_fp16, tf.float32)
+
+        var_fp16 = tf.cast(self.var, tf.float16)
+        self.var = tf.cast(var_fp16, tf.float32)
+
         mean_update = tf.cond(training,
             lambda:K.moving_average_update(self.moving_mean,
             self.mu, self.momentum),
@@ -216,6 +234,9 @@ class l1_batch_norm_mod_dense(Layer):
             self.var, self.momentum),
             lambda:self.moving_var)
         self.add_update([mean_update, var_update])
+
+        beta_fp16 = tf.cast(self.beta, tf.float16)
+        self.beta = tf.cast(beta_fp16, tf.float32)
 
         return self.quantise_gradient_op(x) + K.reshape(self.beta, [1,-1])
 
@@ -239,6 +260,10 @@ class l1_batch_norm_mod_dense(Layer):
         result = xmu * ivar
 
         def custom_grad(dy):
+
+            dy_fp16 = tf.cast(dy, tf.float16)
+            dy = tf.cast(dy_fp16, tf.float32)
+
             N = self.batch_size
 
             dy_norm_x = dy * ivar
