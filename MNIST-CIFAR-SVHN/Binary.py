@@ -11,7 +11,7 @@ from keras import backend as K
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 import sys
 sys.path.insert(0, '..')
 from binarization_utils import *
@@ -53,11 +53,11 @@ if dataset=="MNIST":
 elif dataset=="CIFAR-10" or dataset=="binarynet":
 	use_generator=True
 	(X_train, y_train), (X_test, y_test) = cifar10.load_data()
-elif dataset=="SVHN":
+elif dataset=="SVHN" or dataset=="binarynet-svhn":
 	use_generator=True
 	(X_train, y_train), (X_test, y_test) = load_svhn('./svhn_data')
 else:
-	raise("dataset should be one of the following: [MNIST, CIFAR-10, SVHN].")
+	raise("dataset should be one of the following: [MNIST, CIFAR-10, SVHN, binarynet, binarynet-svhn].")
 
 X_train=X_train.astype(np.float32)
 X_test=X_test.astype(np.float32)
@@ -102,7 +102,7 @@ if Train:
 		#gather all residual binary activation layers:
 		resid_bin_layers=[]
 		for l in model.layers:
-			if isinstance(l,Residual_sign):
+			if isinstance(l,binary_activation):
 				resid_bin_layers.append(l)
 		lr=0.001
 		#opt = keras.optimizers.Adam(lr=lr,decay=1e-6)#SGD(lr=lr,momentum=0.9,decay=1e-5)
@@ -124,7 +124,7 @@ if Train:
 		if use_generator:
 			if dataset=="CIFAR-10" or dataset=="binarynet":
 				horizontal_flip=True
-			if dataset=="SVHN":
+			if dataset=="SVHN" or dataset=="binarynet-svhn":
 				horizontal_flip=False
 			datagen = ImageDataGenerator(
 				width_shift_range=0.15,  # randomly shift images horizontally (fraction of total width)
