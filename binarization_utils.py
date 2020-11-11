@@ -288,6 +288,151 @@ class l1_batch_norm_mod_dense(Layer):
     def compute_output_shape(self,input_shape):
         return input_shape
 
+class l1_batch_norm_vanilla_conv(Layer):
+    def __init__(self,batch_size,width_in,ch_in,momentum, **kwargs):
+        super(l1_batch_norm_vanilla_conv, self).__init__(**kwargs)
+        self.batch_size = batch_size
+        self.width_in = width_in
+        self.ch_in = ch_in
+        self.momentum = momentum
+
+    def build(self, input_shape):
+        super(l1_batch_norm_vanilla_conv, self).build(input_shape)
+        beta = np.zeros([self.ch_in])*1.0
+        self.beta=K.variable(beta)
+        self.trainable_weights=[self.beta]
+        self.moving_mean = self.add_weight(
+            name='moving_mean',
+            shape=[1,1,1,self.ch_in],
+            initializer=tf.zeros_initializer(),
+            trainable=False)
+        self.moving_var = self.add_weight(
+            name='moving_var',
+            shape=[1,1,1,self.ch_in],
+            initializer=tf.initializers.ones(),
+            trainable=False)
+
+    def call(self, x):
+        # Check if training or inference
+        training = K.learning_phase()
+
+        # Calculate mean and l1 variance
+        N = self.batch_size*self.width_in*self.width_in
+        self.mu = 1./N * K.sum(x, axis = [0,1,2])
+        self.mu = K.reshape(self.mu,[1,1,1,-1])
+        xmu = x - self.mu
+        self.var = 1./N * K.sum(K.abs(xmu), axis = [0,1,2])
+        self.var = K.reshape(self.var,[1,1,1,-1])
+
+        # Cast moving stats to FP16 to simulate FP16 storage
+        mu_fp16 = tf.cast(self.mu, tf.float16)
+        self.mu = tf.cast(mu_fp16, tf.float32)
+        var_fp16 = tf.cast(self.var, tf.float16)
+        self.var = tf.cast(var_fp16, tf.float32)
+
+        # Update moving stats at training mode only
+        mean_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_mean,
+            self.mu, self.momentum),
+            lambda:self.moving_mean)
+        var_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_var,
+            self.var, self.momentum),
+            lambda:self.moving_var)
+        self.add_update([mean_update, var_update])
+
+        # Cast beta to FP16 to simulate FP16 storage
+        beta_fp16 = tf.cast(self.beta, tf.float16)
+        self.beta = tf.cast(beta_fp16, tf.float32)
+
+        # Forward prop
+
+        # Check if training or inference
+        training = K.learning_phase()
+
+        # Inference mode: apply moving stats
+        if training in {0, False}:
+            self.mu = self.moving_mean
+            self.var = self.moving_var
+
+        ivar = 1./self.var
+        l1_result = xmu * ivar
+
+        return l1_result + K.reshape(self.beta, [1,1,1,-1])
+
+
+    def get_output_shape_for(self,input_shape):
+        return input_shape
+    def compute_output_shape(self,input_shape):
+        return input_shape
+
+class l1_batch_norm_vanilla_dense(Layer):
+    def __init__(self,batch_size,ch_in,momentum, **kwargs):
+        super(l1_batch_norm_vanilla_dense, self).__init__(**kwargs)
+        self.batch_size = batch_size
+        self.ch_in = ch_in
+        self.momentum = momentum
+
+    def build(self, input_shape):
+        super(l1_batch_norm_vanilla_dense, self).build(input_shape) 
+        beta = np.zeros([self.ch_in])*1.0
+        self.beta=K.variable(beta)
+        self.trainable_weights=[self.beta]
+        self.moving_mean = self.add_weight(
+            name='moving_mean',
+            shape=[1,self.ch_in],
+            initializer=tf.zeros_initializer(),
+            trainable=False)
+        self.moving_var = self.add_weight(
+            name='moving_var',
+            shape=[1,self.ch_in],
+            initializer=tf.initializers.ones(),
+            trainable=False)
+
+    def call(self, x):
+        # Check if training or inference
+        training = K.learning_phase()
+
+        # Calculate mean and l1 variance
+        N = self.batch_size
+        self.mu = 1./N * K.sum(x, axis = 0)
+        self.mu = K.reshape(self.mu,[1,-1])
+        xmu = x - self.mu
+        self.var = 1./N * K.sum(K.abs(xmu), axis = 0)
+        self.var = K.reshape(self.var,[1,-1])
+
+        # Cast moving stats to FP16 to simulate FP16 storage
+        mu_fp16 = tf.cast(self.mu, tf.float16)
+        self.mu = tf.cast(mu_fp16, tf.float32)
+
+        var_fp16 = tf.cast(self.var, tf.float16)
+        self.var = tf.cast(var_fp16, tf.float32)
+
+        # Update moving stats at training mode only
+        mean_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_mean,
+            self.mu, self.momentum),
+            lambda:self.moving_mean)
+        var_update = tf.cond(training,
+            lambda:K.moving_average_update(self.moving_var,
+            self.var, self.momentum),
+            lambda:self.moving_var)
+        self.add_update([mean_update, var_update])
+
+        # Cast beta to FP16 to simulate FP16 storage
+        beta_fp16 = tf.cast(self.beta, tf.float16)
+        self.beta = tf.cast(beta_fp16, tf.float32)
+
+        ivar = 1./self.var
+        l1_result = xmu * ivar
+
+        return l1_result + K.reshape(self.beta, [1,-1])
+
+    def get_output_shape_for(self,input_shape):
+        return input_shape
+    def compute_output_shape(self,input_shape):
+        return input_shape
+
 class binary_activation(Layer):
     def __init__(self, **kwargs):
         super(binary_activation, self).__init__(**kwargs)
